@@ -269,35 +269,45 @@ app.get('/api/clients', async (req, res) => {
     const clients: any[] = [];
     let currentIface = '';
     
-    stdout.split('\n').forEach(line => {
+    const lines = stdout.split('\n');
+    for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.match(/^\d+:\s+ppp\d+:/)) {
             const match = trimmed.match(/^\d+:\s+(ppp\d+):/);
             if (match) currentIface = match[1];
         } else if (trimmed.startsWith('inet ') && currentIface) {
             const parts = trimmed.split(/\s+/);
-            // Example: inet 172.16.101.1 peer 172.16.101.10/32 scope global ppp0
             let localIp = parts[1] || '';
             let peerIp = '';
             
             const peerIndex = parts.indexOf('peer');
             if (peerIndex !== -1 && parts[peerIndex + 1]) {
-                peerIp = parts[peerIndex + 1].split('/')[0]; // Remove /32
+                peerIp = parts[peerIndex + 1].split('/')[0];
             }
             
+            // Try to find username from logs for this ppp interface
+            let username = '';
+            try {
+                // Search in journalctl for the most recent authentication for this ppp interface
+                const logCmd = `journalctl -t pppd --no-pager -n 200 | grep "${currentIface}" | grep "authenticated" | tail -n 1`;
+                const logRes = await runCmd(logCmd);
+                if (logRes.success && logRes.stdout) {
+                    const userMatch = logRes.stdout.match(/peer\s+([^\s]+)\s+authenticated/);
+                    if (userMatch) username = userMatch[1];
+                }
+            } catch (e) {}
+
             clients.push({
                 interface: currentIface,
+                username: username || currentIface, // Fallback to interface name
                 localIp: localIp.split('/')[0],
                 peerIp: peerIp
             });
             currentIface = '';
-        } else if (!trimmed.startsWith('inet ') && !trimmed.startsWith('inet6 ') && !trimmed.startsWith('valid_lft') && !trimmed.match(/^\d+:/)) {
-            // Do nothing, just skip other lines
         } else if (trimmed.match(/^\d+:/) && !trimmed.match(/^\d+:\s+ppp\d+:/)) {
-            // Reset currentIface if we hit another interface
             currentIface = '';
         }
-    });
+    }
     res.json(clients);
 });
 

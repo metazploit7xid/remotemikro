@@ -723,16 +723,14 @@ export default function App() {
                   <div className="space-y-3">
                     {users
                       .filter(u => {
-                        const isOnline = clients.some(c => c.interface.includes(u.username) || u.username === c.interface); // Simplified matching
-                        // Better matching: check if any client IP belongs to this user's expected IP or just check if user is in clients
-                        // Since we don't have exact mapping, we'll assume username is part of interface or just check if online
-                        const onlineClient = clients.find(c => c.interface.includes(u.username) || u.username === c.interface);
+                        const isOnline = clients.some(c => c.username === u.username || c.interface.includes(u.username));
+                        const onlineClient = clients.find(c => c.username === u.username || c.interface.includes(u.username));
                         if (monitoringFilter === 'online') return !!onlineClient;
                         if (monitoringFilter === 'offline') return !onlineClient;
                         return true;
                       })
                       .map(user => {
-                        const onlineClient = clients.find(c => c.interface.includes(user.username) || user.username === c.interface);
+                        const onlineClient = clients.find(c => c.username === user.username || c.interface.includes(user.username));
                         const isOnline = !!onlineClient;
                         const hasConfig = !!mikrotikConfigs[user.username];
 
@@ -813,14 +811,45 @@ export default function App() {
                   </h2>
 
                   {!monitoringData ? (
-                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-center">
-                      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                        <Monitor size={32} />
+                    <div className="space-y-6">
+                      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-center">
+                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400">
+                          <Monitor size={32} />
+                        </div>
+                        <h3 className="text-slate-800 dark:text-slate-100 font-medium mb-1">No Data Selected</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm max-w-xs">
+                          Click "Monitor PPPoE" on an online MikroTik to fetch its real-time PPPoE client status.
+                        </p>
                       </div>
-                      <h3 className="text-slate-800 dark:text-slate-100 font-medium mb-1">No Data Selected</h3>
-                      <p className="text-slate-500 dark:text-slate-400 text-sm max-w-xs">
-                        Click "Monitor PPPoE" on an online MikroTik to fetch its real-time PPPoE client status.
-                      </p>
+
+                      <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 p-6">
+                        <h3 className="text-indigo-800 dark:text-indigo-300 font-bold flex items-center gap-2 mb-4">
+                          <Shield size={18} /> Cara Agar MikroTik Bisa Dimonitor (Online):
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-2">
+                            <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                            <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Koneksi L2TP</h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">
+                              Pastikan MikroTik sudah terhubung ke VPN L2TP ini. Status di daftar sebelah kiri harus berwarna <span className="text-emerald-500 font-bold">Hijau (Online)</span>.
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                            <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Aktifkan API MikroTik</h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">
+                              Di Winbox MikroTik, buka menu <b>IP {'>'} Services</b>. Pastikan service <b>api</b> dalam keadaan <b>Enabled</b> (default port 8728).
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                            <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Login Monitoring</h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">
+                              Klik tombol <b>Login to Monitor</b> (warna oranye) pada MikroTik yang online, lalu masukkan User & Password MikroTik tersebut.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-6">
