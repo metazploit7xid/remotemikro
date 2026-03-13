@@ -29,7 +29,8 @@ export default function App() {
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringFilter, setMonitoringFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [showConfigModal, setShowConfigModal] = useState<string | null>(null);
-  const [configForm, setConfigForm] = useState({ apiUser: 'admin', apiPass: '', apiPort: '8728' });
+  const [configForm, setConfigForm] = useState({ apiUser: 'admin', apiPass: '', apiPort: '8728', manualIp: '' });
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
   
   // New states for Dark Mode, Mobile Menu, and Forward Type
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('l2tp_dark_mode') === 'true');
@@ -707,6 +708,12 @@ export default function App() {
                     <Settings size={16} /> Global API Settings
                   </button>
                   <button 
+                    onClick={() => setShowDiagnostic(!showDiagnostic)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <Activity size={16} /> {showDiagnostic ? 'Hide' : 'Show'} Diagnostics
+                  </button>
+                  <button 
                     onClick={() => { fetchUsers(); fetchClients(); }}
                     className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
@@ -715,7 +722,19 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  {showDiagnostic && (
+                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-auto max-h-60 mb-6 border border-slate-800">
+                      <div className="flex justify-between items-center mb-2 border-bottom border-slate-800 pb-2">
+                        <span className="text-indigo-400 font-bold">DEBUG: Connected L2TP Clients (Raw)</span>
+                        <button onClick={() => setShowDiagnostic(false)} className="text-slate-500 hover:text-white">Close</button>
+                      </div>
+                      <pre>{JSON.stringify(clients, null, 2)}</pre>
+                      <div className="mt-4 text-indigo-400 font-bold">DEBUG: Registered Users</div>
+                      <pre>{JSON.stringify(users.map(u => u.username), null, 2)}</pre>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-1 space-y-4">
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Users size={20} className="text-indigo-500" /> MikroTik List
@@ -774,17 +793,17 @@ export default function App() {
                             </div>
 
                             <button
-                              disabled={!isOnline || monitoringLoading}
+                              disabled={(!isOnline && !mikrotikConfigs[user.username]?.manualIp) || monitoringLoading}
                               onClick={() => {
                                 if (hasConfig) {
-                                  fetchPPPoE(user.username, onlineClient?.peerIp);
+                                  fetchPPPoE(user.username, mikrotikConfigs[user.username]?.manualIp || onlineClient?.peerIp);
                                 } else {
                                   setShowConfigModal(user.username);
-                                  setConfigForm({ apiUser: 'admin', apiPass: '', apiPort: '8728' });
+                                  setConfigForm({ apiUser: 'admin', apiPass: '', apiPort: '8728', manualIp: '' });
                                 }
                               }}
                               className={`w-full py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                                isOnline 
+                                isOnline || mikrotikConfigs[user.username]?.manualIp
                                   ? hasConfig
                                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm' 
                                     : 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm'
@@ -934,6 +953,17 @@ export default function App() {
                           ? 'Set default credentials to be used for all MikroTiks that don\'t have specific settings.'
                           : 'Enter MikroTik API credentials to allow the VPS to fetch PPPoE status via the L2TP tunnel.'}
                       </p>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Manual IP (Optional)</label>
+                        <input 
+                          type="text" 
+                          value={configForm.manualIp}
+                          onChange={e => setConfigForm({...configForm, manualIp: e.target.value})}
+                          placeholder="e.g. 172.16.101.10"
+                          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-800 dark:text-white" 
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1 italic">Isi jika MikroTik online tapi status di aplikasi offline.</p>
+                      </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">API Username</label>
                         <input 

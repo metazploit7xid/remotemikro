@@ -269,6 +269,18 @@ app.get('/api/clients', async (req, res) => {
     const clients: any[] = [];
     let currentIface = '';
     
+    // Read chap-secrets to match static IPs
+    let chapSecrets: any[] = [];
+    try {
+        if (fs.existsSync(CHAP_SECRETS)) {
+            const content = fs.readFileSync(CHAP_SECRETS, 'utf8');
+            chapSecrets = content.split('\n').filter(l => l.trim() && !l.startsWith('#')).map(l => {
+                const p = l.split(/\s+/);
+                return { user: p[0]?.replace(/"/g, '') || '', ip: p[3] || '*' };
+            });
+        }
+    } catch (e) {}
+
     const lines = stdout.split('\n');
     for (const line of lines) {
         const trimmed = line.trim();
@@ -285,17 +297,33 @@ app.get('/api/clients', async (req, res) => {
                 peerIp = parts[peerIndex + 1].split('/')[0];
             }
             
-            // Try to find username from logs for this ppp interface
+            // Try to find username
             let username = '';
-            try {
-                // Search in journalctl for the most recent authentication for this ppp interface
-                const logCmd = `journalctl -t pppd --no-pager -n 200 | grep "${currentIface}" | grep "authenticated" | tail -n 1`;
-                const logRes = await runCmd(logCmd);
-                if (logRes.success && logRes.stdout) {
-                    const userMatch = logRes.stdout.match(/peer\s+([^\s]+)\s+authenticated/);
-                    if (userMatch) username = userMatch[1];
-                }
-            } catch (e) {}
+            
+            // 1. Match by static IP from chap-secrets
+            if (peerIp) {
+                const secret = chapSecrets.find(s => s.ip === peerIp);
+                if (secret) username = secret.user;
+            }
+
+            // 2. Try to find username from logs if not found by static IP
+            if (!username && peerIp) {
+                try {
+                    // Search in journalctl for the most recent authentication for this peer IP
+                    // We look for the IP and then find the 'authenticated' message for the same PID
+                    const logSearch = await runCmd(`journalctl -t pppd --no-pager -n 1000 | grep "${peerIp}" -B 50`);
+                    if (logSearch.success && logSearch.stdout) {
+                        const logLines = logSearch.stdout.split('\n').reverse();
+                        for (const l of logLines) {
+                            const userMatch = l.match(/peer\s+([^\s]+)\s+authenticated/);
+                            if (userMatch) {
+                                username = userMatch[1];
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
 
             clients.push({
                 interface: currentIface,
