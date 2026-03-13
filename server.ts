@@ -190,23 +190,38 @@ app.delete('/api/users/:username', async (req, res) => {
 
 // API: Get Connected Clients
 app.get('/api/clients', async (req, res) => {
-    const { success, stdout } = await runCmd("ip addr show | grep 'ppp\\|inet '");
+    const { success, stdout } = await runCmd("ip addr show");
     if (!success) return res.json([]);
     
     const clients: any[] = [];
     let currentIface = '';
     
     stdout.split('\n').forEach(line => {
-        if (line.includes('ppp')) {
-            const match = line.match(/\d+:\s+(ppp\d+):/);
+        const trimmed = line.trim();
+        if (trimmed.match(/^\d+:\s+ppp\d+:/)) {
+            const match = trimmed.match(/^\d+:\s+(ppp\d+):/);
             if (match) currentIface = match[1];
-        } else if (line.includes('inet ') && currentIface) {
-            const parts = line.trim().split(/\s+/);
+        } else if (trimmed.startsWith('inet ') && currentIface) {
+            const parts = trimmed.split(/\s+/);
+            // Example: inet 172.16.101.1 peer 172.16.101.10/32 scope global ppp0
+            let localIp = parts[1] || '';
+            let peerIp = '';
+            
+            const peerIndex = parts.indexOf('peer');
+            if (peerIndex !== -1 && parts[peerIndex + 1]) {
+                peerIp = parts[peerIndex + 1].split('/')[0]; // Remove /32
+            }
+            
             clients.push({
                 interface: currentIface,
-                localIp: parts[2],
-                peerIp: parts[4]
+                localIp: localIp.split('/')[0],
+                peerIp: peerIp
             });
+            currentIface = '';
+        } else if (!trimmed.startsWith('inet ') && !trimmed.startsWith('inet6 ') && !trimmed.startsWith('valid_lft') && !trimmed.match(/^\d+:/)) {
+            // Do nothing, just skip other lines
+        } else if (trimmed.match(/^\d+:/) && !trimmed.match(/^\d+:\s+ppp\d+:/)) {
+            // Reset currentIface if we hit another interface
             currentIface = '';
         }
     });
@@ -330,8 +345,13 @@ app.post('/api/forwards/mikrotik', async (req, res) => {
 
 // API: Diagnose Ports
 app.get('/api/diagnose', async (req, res) => {
-    const { stdout } = await runCmd("ss -tuln | grep -E '1701|socat'");
-    res.json({ output: stdout || 'No active ports found.' });
+    const { stdout, stderr, error } = await runCmd("ss -tuln");
+    if (!stdout) {
+        return res.json({ output: `Error running ss command: ${stderr || error || 'Unknown error'}` });
+    }
+    
+    const filtered = stdout.split('\n').filter(line => line.includes('1701') || line.includes('socat') || line.includes('Netid')).join('\n');
+    res.json({ output: filtered || 'No active ports found for 1701 or socat.' });
 });
 
 // API: Install Server
