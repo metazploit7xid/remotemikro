@@ -3,7 +3,7 @@ import {
   Activity, Users, Network, Settings, Plus, Trash2, Edit,
   Play, Square, RefreshCw, Server, Shield, Terminal, Search,
   Menu, X, Moon, Sun, Lock, LogOut, ChevronUp, ChevronDown,
-  Monitor, Eye, Database, CheckCircle2, XCircle
+  Monitor, Eye, Database, CheckCircle2, XCircle, LogIn
 } from 'lucide-react';
 
 export default function App() {
@@ -155,12 +155,15 @@ export default function App() {
   const saveMikrotikConfig = async () => {
     if (!showConfigModal) return;
     try {
-      await apiFetch('/api/mikrotik/configs', {
+      const url = showConfigModal === '__global__' ? '/api/mikrotik/configs/global' : '/api/mikrotik/configs';
+      const payload = showConfigModal === '__global__' ? configForm : { username: showConfigModal, ...configForm };
+      
+      await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: showConfigModal, ...configForm })
+        body: JSON.stringify(payload)
       });
-      addLog(`Saved MikroTik config for ${showConfigModal}`);
+      addLog(`Saved MikroTik config for ${showConfigModal === '__global__' ? 'Global Default' : showConfigModal}`);
       fetchMikrotikConfigs();
       setShowConfigModal(null);
     } catch (e: any) {
@@ -402,7 +405,7 @@ export default function App() {
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
           </div>
-          <h1 className="text-2xl font-bold text-center text-slate-800 dark:text-white mb-8">L2TP Manager Login</h1>
+          <h1 className="text-2xl font-bold text-center text-slate-800 dark:text-white mb-8">Remote Mikrotik Login</h1>
           {loginError && (
             <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-6 text-center">
               {loginError}
@@ -457,7 +460,7 @@ export default function App() {
         <div className="p-6 flex items-center justify-between lg:justify-start gap-3 text-white font-bold text-xl border-b border-slate-800">
           <div className="flex items-center gap-3">
             <Shield className="text-indigo-500" />
-            L2TP Manager
+            Remote Mikrotik
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
             <X size={24} />
@@ -693,12 +696,23 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <button 
-                  onClick={() => { fetchUsers(); fetchClients(); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh Status
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      setShowConfigModal('__global__');
+                      setConfigForm(mikrotikConfigs['__global__'] || { apiUser: 'admin', apiPass: '', apiPort: '8728' });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50 rounded-lg text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                  >
+                    <Settings size={16} /> Global API Settings
+                  </button>
+                  <button 
+                    onClick={() => { fetchUsers(); fetchClients(); }}
+                    className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh Status
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -763,19 +777,28 @@ export default function App() {
 
                             <button
                               disabled={!isOnline || monitoringLoading}
-                              onClick={() => fetchPPPoE(user.username, onlineClient?.peerIp)}
+                              onClick={() => {
+                                if (hasConfig) {
+                                  fetchPPPoE(user.username, onlineClient?.peerIp);
+                                } else {
+                                  setShowConfigModal(user.username);
+                                  setConfigForm({ apiUser: 'admin', apiPass: '', apiPort: '8728' });
+                                }
+                              }}
                               className={`w-full py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
                                 isOnline 
-                                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                                  ? hasConfig
+                                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm' 
+                                    : 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm'
                                   : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                               }`}
                             >
                               {monitoringLoading && monitoringData?.username === user.username ? (
                                 <RefreshCw size={16} className="animate-spin" />
                               ) : (
-                                <Eye size={16} />
+                                hasConfig ? <Eye size={16} /> : <LogIn size={16} />
                               )}
-                              Monitor PPPoE
+                              {hasConfig ? 'Monitor PPPoE' : 'Login to Monitor'}
                             </button>
                           </div>
                         );
@@ -869,7 +892,8 @@ export default function App() {
                   <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
                     <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
                       <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                        <Database size={18} className="text-indigo-500" /> API Config: {showConfigModal}
+                        <Database size={18} className="text-indigo-500" /> 
+                        {showConfigModal === '__global__' ? 'Global Default API Config' : `API Config: ${showConfigModal}`}
                       </h3>
                       <button onClick={() => setShowConfigModal(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                         <X size={20} />
@@ -877,7 +901,9 @@ export default function App() {
                     </div>
                     <div className="p-6 space-y-4">
                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        Enter MikroTik API credentials to allow the VPS to fetch PPPoE status via the L2TP tunnel.
+                        {showConfigModal === '__global__' 
+                          ? 'Set default credentials to be used for all MikroTiks that don\'t have specific settings.'
+                          : 'Enter MikroTik API credentials to allow the VPS to fetch PPPoE status via the L2TP tunnel.'}
                       </p>
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">API Username</label>

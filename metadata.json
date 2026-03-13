@@ -1,5 +1,5 @@
 {
-  "name": "MIKROTIKL2TP-REMOTE",
-  "description": "",
+  "name": "Remote Mikrotik",
+  "description": "L2TP VPN Manager and Monitoring for MikroTik",
   "requestFramePermissions": []
 }

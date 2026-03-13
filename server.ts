@@ -149,14 +149,29 @@ app.get('/api/users', (req, res) => {
 
 // API: MikroTik Configs
 app.get('/api/mikrotik/configs', (req, res) => {
-    const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
-    res.json(configs);
+    try {
+        if (!fs.existsSync(MIKROTIK_CONFIGS)) fs.writeFileSync(MIKROTIK_CONFIGS, '{}');
+        const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
+        res.json(configs);
+    } catch (e) {
+        res.json({});
+    }
 });
 
 app.post('/api/mikrotik/configs', (req, res) => {
     const { username, apiUser, apiPass, apiPort } = req.body;
+    if (!fs.existsSync(MIKROTIK_CONFIGS)) fs.writeFileSync(MIKROTIK_CONFIGS, '{}');
     const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
     configs[username] = { apiUser, apiPass, apiPort: apiPort || 8728 };
+    fs.writeFileSync(MIKROTIK_CONFIGS, JSON.stringify(configs, null, 2));
+    res.json({ success: true });
+});
+
+app.post('/api/mikrotik/configs/global', (req, res) => {
+    const { apiUser, apiPass, apiPort } = req.body;
+    if (!fs.existsSync(MIKROTIK_CONFIGS)) fs.writeFileSync(MIKROTIK_CONFIGS, '{}');
+    const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
+    configs['__global__'] = { apiUser, apiPass, apiPort: apiPort || 8728 };
     fs.writeFileSync(MIKROTIK_CONFIGS, JSON.stringify(configs, null, 2));
     res.json({ success: true });
 });
@@ -168,8 +183,17 @@ app.get('/api/mikrotik/pppoe/:username', async (req, res) => {
     
     if (!ip) return res.status(400).json({ error: 'Peer IP required' });
 
+    if (!fs.existsSync(MIKROTIK_CONFIGS)) fs.writeFileSync(MIKROTIK_CONFIGS, '{}');
     const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
-    const config = configs[username] || { apiUser: 'admin', apiPass: '', apiPort: 8728 };
+    
+    const config = configs[username];
+
+    if (!config) {
+        return res.status(404).json({ 
+            error: 'Credentials not found', 
+            suggestion: 'Please click the Database icon or Login button to set API credentials.' 
+        });
+    }
 
     const api = new RouterOSAPI({
         host: ip,
@@ -187,7 +211,10 @@ app.get('/api/mikrotik/pppoe/:username', async (req, res) => {
         
         res.json({ secrets, active });
     } catch (err: any) {
-        res.status(500).json({ error: `MikroTik API Error: ${err.message}` });
+        res.status(500).json({ 
+            error: `MikroTik API Error: ${err.message}`,
+            suggestion: 'Double check your API credentials and ensure API service is enabled in MikroTik.'
+        });
     }
 });
 
