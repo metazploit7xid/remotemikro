@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
+import { RouterOSAPI } from 'node-routeros';
 
 const execPromise = util.promisify(exec);
 const app = express();
@@ -14,11 +15,12 @@ const CHAP_SECRETS = '/etc/ppp/chap-secrets';
 const FORWARDS_CONFIG = '/etc/l2tp-forwards.conf';
 const ROUTES_CONFIG = '/etc/l2tp-routes.conf';
 const ADMIN_CONFIG = path.join(process.cwd(), 'admin.json');
+const MIKROTIK_CONFIGS = path.join(process.cwd(), 'mikrotik-configs.json');
 
 // Ensure config files exist
-[FORWARDS_CONFIG, ROUTES_CONFIG].forEach(file => {
+[FORWARDS_CONFIG, ROUTES_CONFIG, MIKROTIK_CONFIGS].forEach(file => {
     if (!fs.existsSync(file)) {
-        try { fs.writeFileSync(file, ''); } catch (e) {}
+        try { fs.writeFileSync(file, file === MIKROTIK_CONFIGS ? '{}' : ''); } catch (e) {}
     }
 });
 
@@ -142,6 +144,50 @@ app.get('/api/users', (req, res) => {
         res.json(users);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// API: MikroTik Configs
+app.get('/api/mikrotik/configs', (req, res) => {
+    const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
+    res.json(configs);
+});
+
+app.post('/api/mikrotik/configs', (req, res) => {
+    const { username, apiUser, apiPass, apiPort } = req.body;
+    const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
+    configs[username] = { apiUser, apiPass, apiPort: apiPort || 8728 };
+    fs.writeFileSync(MIKROTIK_CONFIGS, JSON.stringify(configs, null, 2));
+    res.json({ success: true });
+});
+
+// API: MikroTik PPPoE Monitoring
+app.get('/api/mikrotik/pppoe/:username', async (req, res) => {
+    const { username } = req.params;
+    const ip = req.query.ip as string;
+    
+    if (!ip) return res.status(400).json({ error: 'Peer IP required' });
+
+    const configs = JSON.parse(fs.readFileSync(MIKROTIK_CONFIGS, 'utf8') || '{}');
+    const config = configs[username] || { apiUser: 'admin', apiPass: '', apiPort: 8728 };
+
+    const api = new RouterOSAPI({
+        host: ip,
+        user: config.apiUser,
+        password: config.apiPass,
+        port: parseInt(config.apiPort),
+        timeout: 5
+    });
+
+    try {
+        await api.connect();
+        const secrets = await api.write('/ppp/secret/print');
+        const active = await api.write('/ppp/active/print');
+        api.close();
+        
+        res.json({ secrets, active });
+    } catch (err: any) {
+        res.status(500).json({ error: `MikroTik API Error: ${err.message}` });
     }
 });
 

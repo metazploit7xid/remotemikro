@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, Users, Network, Settings, Plus, Trash2, Edit,
   Play, Square, RefreshCw, Server, Shield, Terminal, Search,
-  Menu, X, Moon, Sun, Lock, LogOut, ChevronUp, ChevronDown
+  Menu, X, Moon, Sun, Lock, LogOut, ChevronUp, ChevronDown,
+  Monitor, Eye, Database, CheckCircle2, XCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -22,8 +23,16 @@ export default function App() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [diagnoseOutput, setDiagnoseOutput] = useState('');
   
+  // Monitoring states
+  const [mikrotikConfigs, setMikrotikConfigs] = useState<any>({});
+  const [monitoringData, setMonitoringData] = useState<any>(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [monitoringFilter, setMonitoringFilter] = useState<'all' | 'online' | 'offline'>('all');
+  const [showConfigModal, setShowConfigModal] = useState<string | null>(null);
+  const [configForm, setConfigForm] = useState({ apiUser: 'admin', apiPass: '', apiPort: '8728' });
+  
   // New states for Dark Mode, Mobile Menu, and Forward Type
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('l2tp_dark_mode') === 'true');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [forwardType, setForwardType] = useState<'standard' | 'custom'>('standard');
   const [isLogsOpen, setIsLogsOpen] = useState(false);
@@ -74,8 +83,10 @@ export default function App() {
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      localStorage.setItem('l2tp_dark_mode', 'true');
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.setItem('l2tp_dark_mode', 'false');
     }
   }, [isDarkMode]);
 
@@ -114,6 +125,49 @@ export default function App() {
     }
   };
 
+  const fetchMikrotikConfigs = async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await apiFetch('/api/mikrotik/configs');
+      const data = await res.json();
+      setMikrotikConfigs(data);
+    } catch (e) {}
+  };
+
+  const fetchPPPoE = async (username: string, ip: string) => {
+    setMonitoringLoading(true);
+    setMonitoringData(null);
+    try {
+      const res = await apiFetch(`/api/mikrotik/pppoe/${username}?ip=${ip}`);
+      const data = await res.json();
+      if (data.error) {
+        addLog(`Error: ${data.error}`);
+      } else {
+        setMonitoringData({ username, ...data });
+        addLog(`Fetched PPPoE data for ${username}`);
+      }
+    } catch (e: any) {
+      addLog(`Error: ${e.message}`);
+    }
+    setMonitoringLoading(false);
+  };
+
+  const saveMikrotikConfig = async () => {
+    if (!showConfigModal) return;
+    try {
+      await apiFetch('/api/mikrotik/configs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: showConfigModal, ...configForm })
+      });
+      addLog(`Saved MikroTik config for ${showConfigModal}`);
+      fetchMikrotikConfigs();
+      setShowConfigModal(null);
+    } catch (e: any) {
+      addLog(`Error: ${e.message}`);
+    }
+  };
+
   const fetchForwards = async () => {
     if (!isAuthenticated) return;
     try {
@@ -144,6 +198,11 @@ export default function App() {
     if (activeTab === 'dashboard') fetchClients();
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'forwards') fetchForwards();
+    if (activeTab === 'monitoring') {
+      fetchUsers();
+      fetchClients();
+      fetchMikrotikConfigs();
+    }
     
     const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
@@ -332,10 +391,16 @@ export default function App() {
     return (
       <div className={`min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 transition-colors duration-200`}>
         <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-800">
-          <div className="flex justify-center mb-6">
+          <div className="flex justify-center mb-6 relative">
             <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center">
               <Shield className="text-indigo-600 dark:text-indigo-400" size={32} />
             </div>
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="absolute right-0 top-0 p-2 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors"
+            >
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
           </div>
           <h1 className="text-2xl font-bold text-center text-slate-800 dark:text-white mb-8">L2TP Manager Login</h1>
           {loginError && (
@@ -402,6 +467,7 @@ export default function App() {
           {[
             { id: 'dashboard', icon: Activity, label: 'Dashboard' },
             { id: 'users', icon: Users, label: 'VPN Users' },
+            { id: 'monitoring', icon: Monitor, label: 'Monitoring' },
             { id: 'forwards', icon: Network, label: 'Port Forwards' },
             { id: 'settings', icon: Settings, label: 'Settings & Install' }
           ].map(item => (
@@ -609,6 +675,252 @@ export default function App() {
           )}
 
           {/* Port Forwards Tab */}
+          {activeTab === 'monitoring' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                  {(['all', 'online', 'offline'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setMonitoringFilter(f)}
+                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        monitoringFilter === f 
+                          ? 'bg-indigo-600 text-white shadow-sm' 
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <button 
+                  onClick={() => { fetchUsers(); fetchClients(); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh Status
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-1 space-y-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Users size={20} className="text-indigo-500" /> MikroTik List
+                  </h2>
+                  <div className="space-y-3">
+                    {users
+                      .filter(u => {
+                        const isOnline = clients.some(c => c.interface.includes(u.username) || u.username === c.interface); // Simplified matching
+                        // Better matching: check if any client IP belongs to this user's expected IP or just check if user is in clients
+                        // Since we don't have exact mapping, we'll assume username is part of interface or just check if online
+                        const onlineClient = clients.find(c => c.interface.includes(u.username) || u.username === c.interface);
+                        if (monitoringFilter === 'online') return !!onlineClient;
+                        if (monitoringFilter === 'offline') return !onlineClient;
+                        return true;
+                      })
+                      .map(user => {
+                        const onlineClient = clients.find(c => c.interface.includes(user.username) || user.username === c.interface);
+                        const isOnline = !!onlineClient;
+                        const hasConfig = !!mikrotikConfigs[user.username];
+
+                        return (
+                          <div 
+                            key={user.username}
+                            className={`p-4 rounded-xl border transition-all ${
+                              monitoringData?.username === user.username 
+                                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/10' 
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{user.username}</span>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  setShowConfigModal(user.username);
+                                  setConfigForm(mikrotikConfigs[user.username] || { apiUser: 'admin', apiPass: '', apiPort: '8728' });
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-indigo-500 transition-colors"
+                                title="API Settings"
+                              >
+                                <Database size={16} />
+                              </button>
+                            </div>
+                            
+                            <div className="text-xs text-slate-500 space-y-1 mb-4">
+                              <div className="flex justify-between">
+                                <span>Status:</span>
+                                <span className={isOnline ? 'text-emerald-500 font-medium' : ''}>{isOnline ? 'Online' : 'Offline'}</span>
+                              </div>
+                              {isOnline && (
+                                <div className="flex justify-between">
+                                  <span>Peer IP:</span>
+                                  <span className="font-mono">{onlineClient?.peerIp}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <button
+                              disabled={!isOnline || monitoringLoading}
+                              onClick={() => fetchPPPoE(user.username, onlineClient?.peerIp)}
+                              className={`w-full py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                                isOnline 
+                                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              {monitoringLoading && monitoringData?.username === user.username ? (
+                                <RefreshCw size={16} className="animate-spin" />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                              Monitor PPPoE
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                <div className="xl:col-span-2 space-y-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Activity size={20} className="text-indigo-500" /> 
+                    {monitoringData ? `PPPoE Clients: ${monitoringData.username}` : 'Select an online MikroTik to monitor'}
+                  </h2>
+
+                  {!monitoringData ? (
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-center">
+                      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-400">
+                        <Monitor size={32} />
+                      </div>
+                      <h3 className="text-slate-800 dark:text-slate-100 font-medium mb-1">No Data Selected</h3>
+                      <p className="text-slate-500 dark:text-slate-400 text-sm max-w-xs">
+                        Click "Monitor PPPoE" on an online MikroTik to fetch its real-time PPPoE client status.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Secrets</div>
+                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{monitoringData.secrets.length}</div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Active Sessions</div>
+                          <div className="text-2xl font-bold text-emerald-500">{monitoringData.active.length}</div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
+                                <th className="px-6 py-3 font-medium">Status</th>
+                                <th className="px-6 py-3 font-medium">User / Profile</th>
+                                <th className="px-6 py-3 font-medium">Remote Address</th>
+                                <th className="px-6 py-3 font-medium">Uptime</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {monitoringData.secrets.map((secret: any) => {
+                                const active = monitoringData.active.find((a: any) => a.name === secret.name);
+                                return (
+                                  <tr key={secret.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                    <td className="px-6 py-4">
+                                      {active ? (
+                                        <span className="flex items-center gap-1.5 text-emerald-500 text-xs font-medium">
+                                          <CheckCircle2 size={14} /> Online
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1.5 text-slate-400 text-xs font-medium">
+                                          <XCircle size={14} /> Offline
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="font-medium text-slate-800 dark:text-slate-100">{secret.name}</div>
+                                      <div className="text-xs text-slate-500">{secret.profile}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="text-sm font-mono text-slate-600 dark:text-slate-400">
+                                        {active ? active.address : (secret['remote-address'] || '-')}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="text-xs text-slate-500">{active ? active.uptime : '-'}</div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* MikroTik API Config Modal */}
+              {showConfigModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                        <Database size={18} className="text-indigo-500" /> API Config: {showConfigModal}
+                      </h3>
+                      <button onClick={() => setShowConfigModal(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        <X size={20} />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                        Enter MikroTik API credentials to allow the VPS to fetch PPPoE status via the L2TP tunnel.
+                      </p>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">API Username</label>
+                        <input 
+                          type="text" 
+                          value={configForm.apiUser}
+                          onChange={e => setConfigForm({...configForm, apiUser: e.target.value})}
+                          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-800 dark:text-white" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">API Password</label>
+                        <input 
+                          type="password" 
+                          value={configForm.apiPass}
+                          onChange={e => setConfigForm({...configForm, apiPass: e.target.value})}
+                          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-800 dark:text-white" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">API Port</label>
+                        <input 
+                          type="text" 
+                          value={configForm.apiPort}
+                          onChange={e => setConfigForm({...configForm, apiPort: e.target.value})}
+                          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-800 dark:text-white" 
+                        />
+                      </div>
+                    </div>
+                    <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                      <button onClick={() => setShowConfigModal(null)} className="px-4 py-2 text-slate-600 dark:text-slate-400 font-medium hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+                        Cancel
+                      </button>
+                      <button onClick={saveMikrotikConfig} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors">
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'forwards' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
               <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
