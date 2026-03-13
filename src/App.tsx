@@ -28,6 +28,7 @@ export default function App() {
   const [monitoringData, setMonitoringData] = useState<any>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringFilter, setMonitoringFilter] = useState<'all' | 'online' | 'offline'>('all');
+  const [pppoeFilter, setPppoeFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [showConfigModal, setShowConfigModal] = useState<string | null>(null);
   const [configForm, setConfigForm] = useState({ apiUser: 'admin', apiPass: '', apiPort: '8728', manualIp: '' });
   const [showDiagnostic, setShowDiagnostic] = useState(false);
@@ -872,14 +873,37 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Secrets</div>
-                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{monitoringData.secrets.length}</div>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                            <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Secrets</div>
+                            <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{monitoringData.secrets.length}</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                            <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Active Sessions</div>
+                            <div className="text-2xl font-bold text-emerald-500">{monitoringData.active.length}</div>
+                          </div>
                         </div>
-                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Active Sessions</div>
-                          <div className="text-2xl font-bold text-emerald-500">{monitoringData.active.length}</div>
+
+                        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg self-end md:self-center">
+                          <button 
+                            onClick={() => setPppoeFilter('all')}
+                            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${pppoeFilter === 'all' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          >
+                            All
+                          </button>
+                          <button 
+                            onClick={() => setPppoeFilter('online')}
+                            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${pppoeFilter === 'online' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          >
+                            Online
+                          </button>
+                          <button 
+                            onClick={() => setPppoeFilter('offline')}
+                            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${pppoeFilter === 'offline' ? 'bg-white dark:bg-slate-700 text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          >
+                            Offline
+                          </button>
                         </div>
                       </div>
 
@@ -895,8 +919,15 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {monitoringData.secrets.map((secret: any) => {
-                                const active = monitoringData.active.find((a: any) => a.name === secret.name);
+                               {monitoringData.secrets
+                                 .filter((secret: any) => {
+                                   const isActive = monitoringData.active.some((a: any) => a.name === secret.name);
+                                   if (pppoeFilter === 'online') return isActive;
+                                   if (pppoeFilter === 'offline') return !isActive;
+                                   return true;
+                                 })
+                                 .map((secret: any) => {
+                                   const active = monitoringData.active.find((a: any) => a.name === secret.name);
                                 return (
                                   <tr key={secret.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4">
